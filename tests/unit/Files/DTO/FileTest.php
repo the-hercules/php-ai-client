@@ -129,7 +129,12 @@ class FileTest extends TestCase
         $capturedWarning = null;
         set_error_handler(
             static function (int $errno, string $errstr) use (&$capturedWarning): bool {
-                $capturedWarning = $errstr;
+                // Ignore diagnostics suppressed with the @ operator, which the handler still
+                // receives. Masking is detected by testing $errno against error_reporting():
+                // it is 0 when suppressed on PHP 7.4, and a mask excluding E_WARNING on PHP 8.0+.
+                if ((error_reporting() & $errno) !== 0) {
+                    $capturedWarning = $errstr;
+                }
 
                 return true;
             },
@@ -143,6 +148,66 @@ class FileTest extends TestCase
         }
 
         $this->assertNull($capturedWarning, 'Constructing a File from large base64 data must not emit a warning.');
+        $this->assertEquals(FileTypeEnum::inline(), $file->getFileType());
+        $this->assertEquals($base64Data, $file->getBase64Data());
+        $this->assertEquals($mimeType, $file->getMimeType());
+    }
+
+    /**
+     * Tests creating a File from base64 data at exactly the PHP_MAXPATHLEN boundary without a PHP warning.
+     *
+     * @return void
+     */
+    public function testCreateFromBoundaryLengthBase64DoesNotEmitWarning(): void
+    {
+        // Build a base64 string whose length is exactly PHP_MAXPATHLEN.
+        // Start with valid base64 chars and pad to the boundary.
+        $base64Data = str_pad('/9j/', PHP_MAXPATHLEN, 'A');
+        $mimeType = 'image/jpeg';
+
+        $this->assertSame(PHP_MAXPATHLEN, strlen($base64Data));
+
+        $capturedWarning = null;
+        set_error_handler(
+            static function (int $errno, string $errstr) use (&$capturedWarning): bool {
+                if ((error_reporting() & $errno) !== 0) {
+                    $capturedWarning = $errstr;
+                }
+
+                return true;
+            },
+            E_WARNING
+        );
+
+        try {
+            $file = new File($base64Data, $mimeType);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertNull(
+            $capturedWarning,
+            'Constructing a File from boundary-length base64 data must not emit a warning.'
+        );
+        $this->assertEquals(FileTypeEnum::inline(), $file->getFileType());
+        $this->assertEquals($base64Data, $file->getBase64Data());
+        $this->assertEquals($mimeType, $file->getMimeType());
+    }
+
+    /**
+     * Tests creating a File from a small plain base64 payload.
+     *
+     * @return void
+     */
+    public function testCreateFromSmallPlainBase64(): void
+    {
+        $base64Data = base64_encode('small test payload');
+        $mimeType = 'text/plain';
+
+        $this->assertLessThan(PHP_MAXPATHLEN, strlen($base64Data));
+
+        $file = new File($base64Data, $mimeType);
+
         $this->assertEquals(FileTypeEnum::inline(), $file->getFileType());
         $this->assertEquals($base64Data, $file->getBase64Data());
         $this->assertEquals($mimeType, $file->getMimeType());
