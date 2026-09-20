@@ -222,7 +222,7 @@ class MessagePart extends AbstractDataTransferObject
     /**
      * Gets the citations.
      *
-     * @since 1.4.0
+     * @since n.e.x.t
      *
      * @return Citation[]|null The citations or null if not set.
      */
