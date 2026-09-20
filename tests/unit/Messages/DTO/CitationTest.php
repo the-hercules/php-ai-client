@@ -443,4 +443,166 @@ class CitationTest extends TestCase
         $this->assertNull($restored->getEndIndex());
         $this->assertNull($restored->getQuotedText());
     }
+
+    /**
+     * Tests that the location type discriminator round-trips verbatim.
+     *
+     * @return void
+     */
+    public function testTypeDiscriminatorRoundTrips(): void
+    {
+        $citation = new Citation(
+            'https://www.example.com/en/',
+            null,
+            'Example Title',
+            null,
+            null,
+            'The source passage, verbatim.',
+            'web_search_result_location'
+        );
+
+        $this->assertEquals('web_search_result_location', $citation->getType());
+
+        $array = $citation->toArray();
+        $this->assertSame('web_search_result_location', $array[Citation::KEY_TYPE]);
+
+        $restored = Citation::fromArray($array);
+        $this->assertEquals('web_search_result_location', $restored->getType());
+        $this->assertEquals('The source passage, verbatim.', $restored->getQuotedText());
+    }
+
+    /**
+     * Tests that a document location type is preserved alongside a document index.
+     *
+     * @return void
+     */
+    public function testDocumentLocationTypeIsPreserved(): void
+    {
+        $citation = new Citation(
+            null,
+            0,
+            'My Document',
+            null,
+            null,
+            'The exact text being cited',
+            'char_location'
+        );
+
+        $this->assertEquals('char_location', $citation->getType());
+        $this->assertEquals(0, $citation->getDocumentIndex());
+    }
+
+    /**
+     * Tests that type defaults to null when the provider supplies none.
+     *
+     * @return void
+     */
+    public function testTypeDefaultsToNull(): void
+    {
+        $citation = new Citation('https://example.com');
+
+        $this->assertNull($citation->getType());
+        $this->assertArrayNotHasKey(Citation::KEY_TYPE, $citation->toArray());
+    }
+
+    /**
+     * Tests that provider-specific values round-trip through additionalData.
+     *
+     * @return void
+     */
+    public function testAdditionalDataRoundTrips(): void
+    {
+        $extras = [
+            'encrypted_index' => 'abc123opaqueblob',
+            'license' => 'CC-BY-4.0',
+        ];
+
+        $citation = new Citation(
+            'https://example.com',
+            null,
+            null,
+            null,
+            null,
+            null,
+            'web_search_result_location',
+            $extras
+        );
+
+        $this->assertSame($extras, $citation->getAdditionalData());
+
+        $restored = Citation::fromArray($citation->toArray());
+        $this->assertSame($extras, $restored->getAdditionalData());
+    }
+
+    /**
+     * Tests that additionalData defaults to null and is omitted when unset.
+     *
+     * @return void
+     */
+    public function testAdditionalDataDefaultsToNull(): void
+    {
+        $citation = new Citation('https://example.com');
+
+        $this->assertNull($citation->getAdditionalData());
+        $this->assertArrayNotHasKey(Citation::KEY_ADDITIONAL_DATA, $citation->toArray());
+    }
+
+    /**
+     * Tests that additionalData rejects a non-string-keyed array.
+     *
+     * @return void
+     */
+    public function testAdditionalDataRejectsIntegerKeys(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('additionalData must be a map with string keys');
+
+        new Citation(
+            'https://example.com',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            ['opaque-value']
+        );
+    }
+
+    /**
+     * Tests that an empty additionalData map serializes as a JSON object, not an array.
+     *
+     * @return void
+     */
+    public function testEmptyAdditionalDataSerializesAsObject(): void
+    {
+        $citation = new Citation(
+            'https://example.com',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            []
+        );
+
+        $json = json_encode($citation);
+        $this->assertIsString($json);
+        $this->assertStringContainsString('"additionalData":{}', $json);
+    }
+
+    /**
+     * Tests that the new fields are exposed in the JSON schema.
+     *
+     * @return void
+     */
+    public function testJsonSchemaExposesTypeAndAdditionalData(): void
+    {
+        $schema = Citation::getJsonSchema();
+
+        $this->assertArrayHasKey(Citation::KEY_TYPE, $schema['properties']);
+        $this->assertArrayHasKey(Citation::KEY_ADDITIONAL_DATA, $schema['properties']);
+        $this->assertEquals('object', $schema['properties'][Citation::KEY_ADDITIONAL_DATA]['type']);
+    }
 }
